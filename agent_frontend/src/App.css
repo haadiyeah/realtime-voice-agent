@@ -1,0 +1,138 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.App {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.App-header {
+  margin-bottom: 3rem;
+}
+
+.App-header h1 {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  background: linear-gradient(45deg, #646cff, #61dafb);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.App-header p {
+  color: #888;
+  font-size: 1.2rem;
+}
+
+.status-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+}
+
+.status-card h2 {
+  margin-bottom: 1rem;
+  color: #fff;
+}
+
+.status.connected {
+  color: #4ade80;
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+.status.disconnected {
+  color: #f87171;
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+.controls {
+  margin-bottom: 2rem;
+}
+
+.connect-btn, .disconnect-btn {
+  font-size: 1.2rem;
+  padding: 1rem 2rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.connect-btn {
+  background: linear-gradient(45deg, #646cff, #61dafb);
+  color: white;
+}
+
+.connect-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(100, 108, 255, 0.3);
+}
+
+.connect-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.disconnect-btn {
+  background: linear-gradient(45deg, #f87171, #fb7185);
+  color: white;
+}
+
+.disconnect-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(248, 113, 113, 0.3);
+}
+
+.error {
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 2rem;
+}
+
+.error p {
+  color: #f87171;
+  margin: 0;
+}
+
+.instructions {
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: left;
+}
+
+.instructions h3 {
+  text-align: center;
+  color: #4ade80;
+  margin-bottom: 1rem;
+}
+
+.instructions p {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  color: #ccc;
+}
+
+.instructions ul {
+  list-style: none;
+  padding: 0;
+}
+
+.instructions li {
+  padding: 0.5rem 0;
+  color: #4ade80;
+}
