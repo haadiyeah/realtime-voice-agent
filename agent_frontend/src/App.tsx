@@ -190,7 +190,7 @@ function App() {
         },
         outputGuardrails: guardrails,
         outputGuardrailSettings: {
-          debounceTextLength: 50, // Check every 50 characters for faster detection
+          debounceTextLength: 25, // Check every 25 characters for very fast detection
         },
       })
 
@@ -214,37 +214,153 @@ function App() {
 
       // Listen for conversation history updates
       newSession.on('history_updated', (history: any) => {
-        console.log('History updated:', history)
+        console.log('=== History updated ===', history)
         const formattedHistory = history
           .filter((item: any) => item.type === 'message')
-          .map((item: any) => ({
-            role: item.role || 'unknown',
-            content: (() => {
-              const contentItem = item.content?.[0]
-              if (!contentItem) return 'No content'
-              if (
-                contentItem.type === 'text' ||
-                contentItem.type === 'input_text'
-              ) {
-                return contentItem.text || 'Empty text'
-              }
-              if (contentItem.type === 'input_audio') {
-                return contentItem.transcript ?? 'Audio message'
-              }
-              return 'Unknown message type'
-            })()
-          }))
+          .map((item: any, index: number) => {
+            console.log(`Message ${index}:`, {
+              role: item.role,
+              type: item.type,
+              content: item.content
+            })
+            
+            return {
+              role: item.role || 'unknown',
+              content: (() => {
+                // Handle different content structures
+                if (!item.content) {
+                  return 'No content property'
+                }
+                
+                // Content might be a string directly
+                if (typeof item.content === 'string') {
+                  return item.content
+                }
+                
+                // Content might be an array
+                if (Array.isArray(item.content)) {
+                  if (item.content.length === 0) {
+                    return 'Empty content array'
+                  }
+                  
+                  const contentItem = item.content[0]
+                  console.log(`Content item for message ${index}:`, contentItem)
+                  
+                  // Direct text property
+                  if (contentItem.text) {
+                    return contentItem.text
+                  }
+                  
+                  // Transcript property (for audio)
+                  if (contentItem.transcript) {
+                    return contentItem.transcript
+                  }
+                  
+                  // Content item is a string
+                  if (typeof contentItem === 'string') {
+                    return contentItem
+                  }
+                  
+                  // Different content types
+                  if (contentItem.type) {
+                    switch (contentItem.type) {
+                      case 'text':
+                        return contentItem.text || contentItem.content || 'Empty text content'
+                      case 'input_text':
+                        return contentItem.text || contentItem.input_text || 'Empty input text'
+                      case 'input_audio':
+                        return contentItem.transcript || 'Audio message (no transcript)'
+                      case 'audio':
+                        return contentItem.transcript || 'Audio content (no transcript)'
+                      default:
+                        console.log(`Unknown content type: ${contentItem.type}`, contentItem)
+                        break
+                    }
+                  }
+                  
+                  // Try to find any text-like property
+                  const textProps = ['text', 'transcript', 'content', 'message', 'input_text', 'output_text']
+                  for (const prop of textProps) {
+                    if (contentItem[prop] && typeof contentItem[prop] === 'string') {
+                      return contentItem[prop]
+                    }
+                  }
+                  
+                  // Show the actual structure for debugging
+                  return `Unhandled content structure: ${JSON.stringify(contentItem, null, 2).slice(0, 200)}...`
+                }
+                
+                // Content is an object but not array
+                return `Non-array content: ${JSON.stringify(item.content, null, 2).slice(0, 200)}...`
+              })()
+            }
+          })
+        
+        console.log('Formatted history:', formattedHistory)
         setConversationHistory(formattedHistory)
       })
 
       // Listen for guardrail violations
       newSession.on('guardrail_tripped', (event: any) => {
-        console.log('Guardrail tripped:', event)
+        console.log('=== Guardrail tripped ===')
+        console.log('Full event object:', JSON.stringify(event, null, 2))
+        console.log('Event keys:', Object.keys(event))
+        console.log('Event structure:', event)
+        
+        // Try to extract guardrail information from different possible structures
+        let guardrailName = 'Unknown Guardrail'
+        let guardrailDetails = {}
+        
+        // Try different possible property paths
+        if (event.guardrail_name) {
+          guardrailName = event.guardrail_name
+        } else if (event.name) {
+          guardrailName = event.name
+        } else if (event.guardrail && event.guardrail.name) {
+          guardrailName = event.guardrail.name
+        } else if (event.type) {
+          guardrailName = event.type
+        }
+        
+        // Try different possible detail paths
+        if (event.details) {
+          guardrailDetails = event.details
+        } else if (event.outputInfo) {
+          guardrailDetails = event.outputInfo
+        } else if (event.info) {
+          guardrailDetails = event.info
+        } else if (event.data) {
+          guardrailDetails = event.data
+        } else if (event.guardrail && event.guardrail.details) {
+          guardrailDetails = event.guardrail.details
+        } else {
+          // If no details found, show the entire event for debugging
+          const { guardrail_name, name, guardrail, type, ...restEvent } = event
+          guardrailDetails = restEvent
+        }
+        
+        console.log('Extracted guardrail info:', {
+          name: guardrailName,
+          details: guardrailDetails
+        })
+        
         setGuardrailViolations(prev => [...prev, {
-          name: event.guardrail_name || 'Unknown Guardrail',
-          details: event.details || {},
+          name: guardrailName,
+          details: guardrailDetails,
           timestamp: new Date()
         }])
+        
+        // When a guardrail is triggered, the agent should stop and the conversation
+        // should be truncated at the violation point to prevent showing blocked content
+        try {
+          // Interrupt the current response
+          if (newSession && typeof newSession.interrupt === 'function') {
+            newSession.interrupt()
+            console.log('Session interrupted due to guardrail violation')
+          }
+        } catch (error) {
+          console.log('Could not interrupt session:', error)
+        }
       })
 
       const clientApiKey = import.meta.env.VITE_CLIENT_EPHEMERAL_TOKEN || 'ek_68ad8770933081918ecc02da376e9bf0'
@@ -389,7 +505,7 @@ function App() {
                 {guardrailViolations.length > 0 ? (
                   <div className="violations-list">
                     <h5>⚠️ Recent Violations:</h5>
-                    {guardrailViolations.slice(-5).map((violation, index) => (
+                    {guardrailViolations.slice(-3).map((violation, index) => (
                       <div key={index} className="violation">
                         <div className="violation-header">
                           <span className="violation-name">{violation.name}</span>
@@ -398,7 +514,29 @@ function App() {
                           </span>
                         </div>
                         <div className="violation-details">
-                          {JSON.stringify(violation.details, null, 2)}
+                          {(() => {
+                            // Convert technical details to user-friendly messages
+                            const details = violation.details
+                            
+                            if (details.containsInappropriate && details.detectedWords?.length > 0) {
+                              return `🚫 Inappropriate content detected. Response was blocked for safety.`
+                            }
+                            
+                            if (details.containsPersonalInfo) {
+                              const types = []
+                              if (details.hasEmail) types.push('email addresses')
+                              if (details.hasPhone) types.push('phone numbers') 
+                              if (details.hasSSN) types.push('social security numbers')
+                              return `🔒 Personal information detected: ${types.join(', ')}. Response blocked for privacy protection.`
+                            }
+                            
+                            if (details.containsFinancialInfo && details.detectedKeywords?.length > 0) {
+                              return `💳 Financial information detected (${details.detectedKeywords.join(', ')}). Response blocked for security.`
+                            }
+                            
+                            // Fallback for any other violation
+                            return `🛡️ Content filtered by safety guardrails. Response was blocked.`
+                          })()}
                         </div>
                       </div>
                     ))}
