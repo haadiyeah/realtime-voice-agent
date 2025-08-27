@@ -1,131 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { RealtimeAgent, RealtimeSession, tool } from '@openai/agents/realtime'
-import { z } from 'zod'
-import type { RealtimeOutputGuardrail } from '@openai/agents/realtime'
+import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime'
+import { guardrails } from './guardrails'
+import { getWeather, searchKnowledge, calculateMath } from './tools'
+import { TokenService } from './services/tokenService'
+import { TokenRegenerationModal } from './components/TokenRegenerationModal'
 import './App.css'
-
-// Guardrails for content filtering and safety
-const guardrails: RealtimeOutputGuardrail[] = [
-  {
-    name: 'Inappropriate Content Filter',
-    async execute({ agentOutput }) {
-      const inappropriateWords = ['hate', 'violence', 'harmful', 'dangerous']
-      const containsInappropriate = inappropriateWords.some(word => 
-        agentOutput.toLowerCase().includes(word.toLowerCase())
-      )
-      return {
-        tripwireTriggered: containsInappropriate,
-        outputInfo: { containsInappropriate, detectedWords: inappropriateWords.filter(word => 
-          agentOutput.toLowerCase().includes(word.toLowerCase())
-        ) },
-      }
-    },
-  },
-  {
-    name: 'Privacy Protection',
-    async execute({ agentOutput }) {
-      // Check for potential personal information patterns
-      const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
-      const phonePattern = /\b\d{3}-\d{3}-\d{4}\b|\b\(\d{3}\)\s*\d{3}-\d{4}\b/g
-      const ssnPattern = /\b\d{3}-\d{2}-\d{4}\b/g
-      
-      const hasEmail = emailPattern.test(agentOutput)
-      const hasPhone = phonePattern.test(agentOutput)
-      const hasSSN = ssnPattern.test(agentOutput)
-      
-      const containsPersonalInfo = hasEmail || hasPhone || hasSSN
-      
-      return {
-        tripwireTriggered: containsPersonalInfo,
-        outputInfo: { containsPersonalInfo, hasEmail, hasPhone, hasSSN },
-      }
-    },
-  },
-  {
-    name: 'Financial Information Filter',
-    async execute({ agentOutput }) {
-      const financialKeywords = ['credit card', 'social security', 'bank account', 'password', 'pin number']
-      const containsFinancialInfo = financialKeywords.some(keyword => 
-        agentOutput.toLowerCase().includes(keyword.toLowerCase())
-      )
-      return {
-        tripwireTriggered: containsFinancialInfo,
-        outputInfo: { containsFinancialInfo, detectedKeywords: financialKeywords.filter(keyword => 
-          agentOutput.toLowerCase().includes(keyword.toLowerCase())
-        ) },
-      }
-    },
-  },
-]
-
-// Tools for our voice agent
-const getWeather = tool({
-  name: 'get_weather',
-  description: 'Return the weather for a city.',
-  parameters: z.object({ 
-    city: z.string().describe('The city to get weather for') 
-  }),
-  async execute({ city }) {
-    console.log(`Getting weather for ${city}...`)
-    // Simulate weather API call
-    const weatherData = {
-      'london': 'cloudy with occasional rain, 12°C',
-      'new york': 'sunny and warm, 25°C',
-      'tokyo': 'partly cloudy, 18°C',
-      'default': 'sunny and pleasant, 22°C'
-    }
-    const key = city.toLowerCase() as keyof typeof weatherData
-    const weather = weatherData[key] ?? weatherData.default
-    return `The weather in ${city} is currently ${weather}.`
-  },
-})
-
-const searchKnowledge = tool({
-  name: 'search_knowledge',
-  description: 'Search through available documents and knowledge base to answer questions.',
-  parameters: z.object({
-    query: z.string().describe('Search query based on user question'),
-    category: z.string().nullable().optional().describe('Optional category to search in: general, technical, business')
-  }),
-  async execute({ query, category }) {
-    const searchCategory = category || 'general'
-    console.log(`Searching knowledge base for: ${query} in category: ${searchCategory}`)
-    
-    // Simulate knowledge search (you'll replace this with actual RAG/LangChain call)
-    const mockResponses = {
-      'voice agent': 'Voice agents are AI systems that can have natural conversations using speech. They use real-time APIs to process audio input and generate spoken responses.',
-      'openai': 'OpenAI is an AI research company that develops advanced language models like GPT-4 and provides APIs for developers.',
-      'realtime': 'The OpenAI Realtime API enables real-time speech-to-speech conversations with AI models, supporting features like voice activity detection and interruptions.',
-      'default': `I found some information related to "${query}". This appears to be about ${searchCategory} topics. Let me provide you with the most relevant details from our knowledge base.`
-    }
-    
-    // Simple keyword matching (replace with actual vector search)
-    const foundKey = (Object.keys(mockResponses) as Array<keyof typeof mockResponses>)
-      .find(key => query.toLowerCase().includes(key))
-    const response = foundKey ? mockResponses[foundKey] : mockResponses.default
-
-    return response
-  },
-})
-
-const calculateMath = tool({
-  name: 'calculate',
-  description: 'Perform mathematical calculations and solve math problems.',
-  parameters: z.object({
-    expression: z.string().describe('Mathematical expression to evaluate (e.g., "2 + 2", "sqrt(16)", "10 * 5")')
-  }),
-  async execute({ expression }) {
-    try {
-      console.log(`Calculating: ${expression}`)
-      // Simple math evaluation (be careful with eval in production!)
-      const sanitizedExpression = expression.replace(/[^0-9+\-*/.() ]/g, '')
-      const result = eval(sanitizedExpression)
-      return `The result of ${expression} is ${result}.`
-    } catch (error) {
-      return `I couldn't calculate "${expression}". Please provide a valid mathematical expression.`
-    }
-  },
-})
 
 function App() {
   const [session, setSession] = useState<RealtimeSession | null>(null)
@@ -139,6 +18,8 @@ function App() {
   const [showGuardrails, setShowGuardrails] = useState(false)
   const [textInput, setTextInput] = useState('')
   const [isTextMode, setIsTextMode] = useState(false)
+  const [showTokenModal, setShowTokenModal] = useState(false)
+  const [currentToken, setCurrentToken] = useState<string | null>(null)
 
   const sendTextMessage = async (message: string) => {
     if (!session || !message.trim()) return
@@ -158,7 +39,7 @@ function App() {
     sendTextMessage(textInput)
   }
 
-  const connectToAgent = async () => {
+  const connectToAgent = async (token?: string) => {
     try {
       setIsConnecting(true)
       setError(null)
@@ -300,6 +181,13 @@ function App() {
         setConversationHistory(formattedHistory)
       })
 
+      // Listen for audio interruptions
+      newSession.on('audio_interrupted', () => {
+        console.log('Audio interrupted - stopping playback')
+        // Handle local playback interruption (if using WebSocket)
+        // The session will automatically handle truncating the conversation
+      })
+
       // Listen for guardrail violations
       newSession.on('guardrail_tripped', (event: any) => {
         console.log('=== Guardrail tripped ===')
@@ -363,18 +251,42 @@ function App() {
         }
       })
 
-      const clientApiKey = import.meta.env.VITE_CLIENT_EPHEMERAL_TOKEN || 'ek_68ad8770933081918ecc02da376e9bf0'
+      const clientApiKey = token || currentToken || await TokenService.getValidToken()
+      setCurrentToken(clientApiKey)
       
       await newSession.connect({ apiKey: clientApiKey })
       
       setSession(newSession)
       setIsConnected(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection failed')
       console.error('Failed to connect to voice agent:', err)
+      
+      // Check if it's a 401 error (token expired) - handle various error formats
+      // const errorMessage = err instanceof Error ? err.message : String(err)
+      // const is401Error = errorMessage.includes('401') || 
+      //                   errorMessage.includes('Unauthorized') || 
+      //                   errorMessage.includes('OperationError') ||
+      //                   errorMessage.includes('authentication') ||
+      //                   errorMessage.includes('token') && errorMessage.includes('invalid') ||
+      //                   errorMessage.includes('token') && errorMessage.includes('expired')
+      
+     
+        console.log('Detected 401/authentication error, showing token regeneration modal')
+        setShowTokenModal(true)
+        setError('Authentication failed - token may be expired')
+     
     } finally {
       setIsConnecting(false)
     }
+  }
+
+  const handleTokenRegenerated = (newToken: string) => {
+    console.log('Token regeneration successful, retrying connection...')
+    setCurrentToken(newToken)
+    setError(null)
+    setShowTokenModal(false)
+    // Automatically retry connection with new token
+    connectToAgent(newToken)
   }
 
   const disconnect = async () => {
@@ -385,105 +297,142 @@ function App() {
     }
   }
 
+  const interruptAgent = () => {
+    if (session && typeof session.interrupt === 'function') {
+      session.interrupt()
+      console.log('Manual interruption triggered')
+    }
+  }
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>🎤 Voice Agent</h1>
-        <p>Your AI voice assistant powered by OpenAI Realtime API</p>
+    <div className="max-w-4xl mx-auto p-8 text-center min-h-screen bg-gray-900 text-white">
+      <header className="mb-12">
+        <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+          🎤 Voice Agent
+        </h1>
+        <p className="text-gray-400 text-xl">Your AI voice assistant powered by OpenAI Realtime API</p>
       </header>
 
       <main>
-        <div className="status-card">
-          <h2>Connection Status</h2>
-          <p className={`status ${isConnected ? 'connected' : 'disconnected'}`}>
+        <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-8 mb-8">
+          <h2 className="text-2xl font-semibold mb-4 text-white">Connection Status</h2>
+          <p className={`text-xl font-bold ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
             {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
           </p>
         </div>
 
-        <div className="controls">
+        <div className="mb-8">
           {!isConnected ? (
             <button 
-              onClick={connectToAgent}
+              onClick={() => connectToAgent()}
               disabled={isConnecting}
-              className="connect-btn"
+              className="text-xl font-bold py-4 px-8 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-blue-500/25"
             >
               {isConnecting ? 'Connecting...' : '🎤 Connect to Voice Agent'}
             </button>
           ) : (
-            <button onClick={disconnect} className="disconnect-btn">
+            <button 
+              onClick={disconnect} 
+              className="text-xl font-bold py-4 px-8 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white rounded-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-red-500/25"
+            >
               🔌 Disconnect
             </button>
           )}
         </div>
 
         {error && (
-          <div className="error">
-            <p>❌ Error: {error}</p>
+          <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-4 mb-8">
+            <p className="text-red-400">❌ Error: {error}</p>
           </div>
         )}
 
         {isConnected && (
-          <div className="instructions">
-            <h3>🎉 Voice Agent Ready!</h3>
-            <p>Your microphone is now active. Start speaking to interact with your AI assistant!</p>
-            <div className="features">
-              <h4>Available Tools:</h4>
-              <ul>
-                <li>🔍 Knowledge Search - Ask about topics, documentation</li>
-                <li>🌤️ Weather - Get weather for any city</li>
-                <li>🧮 Calculator - Solve math problems</li>
+          <div className="bg-green-900/10 border border-green-500/30 rounded-xl p-8 text-left">
+            <h3 className="text-center text-2xl font-bold text-green-400 mb-4">🎉 Voice Agent Ready!</h3>
+            <p className="text-center mb-6 text-gray-300">Your microphone is now active. Start speaking to interact with your AI assistant!</p>
+            
+            <div className="mb-6">
+              <h4 className="text-cyan-400 font-semibold mb-3">Available Tools:</h4>
+              <ul className="space-y-2">
+                <li className="text-gray-300">🔍 Knowledge Search - Ask about topics, documentation</li>
+                <li className="text-gray-300">🌤️ Weather - Get weather for any city</li>
+                <li className="text-gray-300">🧮 Calculator - Solve math problems</li>
               </ul>
             </div>
             
-            <div className="agent-controls">
-              <button onClick={() => setShowHistory(!showHistory)} className="history-btn">
+            <div className="flex flex-wrap gap-3 justify-center mb-6">
+              <button 
+                onClick={() => setShowHistory(!showHistory)} 
+                className="bg-cyan-900/20 border border-cyan-500/50 text-cyan-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-cyan-900/30 hover:-translate-y-0.5 transition-all duration-200"
+              >
                 {showHistory ? '📜 Hide' : '📜 Show'} Conversation
               </button>
-              <button onClick={() => setShowGuardrails(!showGuardrails)} className="guardrails-btn">
+              <button 
+                onClick={() => setShowGuardrails(!showGuardrails)} 
+                className="bg-purple-900/20 border border-purple-500/50 text-purple-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-900/30 hover:-translate-y-0.5 transition-all duration-200 relative"
+              >
                 {showGuardrails ? '🛡️ Hide' : '🛡️ Show'} Guardrails
-                {guardrailViolations.length > 0 && <span className="violation-count"> ({guardrailViolations.length})</span>}
+                {guardrailViolations.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">
+                    {guardrailViolations.length}
+                  </span>
+                )}
               </button>
-              <button onClick={() => setIsTextMode(!isTextMode)} className="text-mode-btn">
+              <button 
+                onClick={() => setIsTextMode(!isTextMode)} 
+                className="bg-green-900/20 border border-green-500/50 text-green-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-900/30 hover:-translate-y-0.5 transition-all duration-200"
+              >
                 {isTextMode ? '🎤 Voice' : '⌨️ Text'} Mode
+              </button>
+              <button 
+                onClick={interruptAgent} 
+                disabled={!isConnected}
+                className="bg-yellow-900/20 border border-yellow-500/50 text-yellow-400 px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-900/30 hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ✋ Stop Agent
               </button>
             </div>
 
             {isTextMode && (
-              <div className="text-input-section">
-                <h4>💬 Text Chat</h4>
-                <form onSubmit={handleTextSubmit} className="text-form">
-                  <div className="text-input-group">
+              <div className="bg-green-900/10 border border-green-500/30 rounded-lg p-6 mb-6">
+                <h4 className="text-green-400 font-semibold mb-4">💬 Text Chat</h4>
+                <form onSubmit={handleTextSubmit} className="mb-4">
+                  <div className="flex gap-3">
                     <input
                       type="text"
                       value={textInput}
                       onChange={(e) => setTextInput(e.target.value)}
                       placeholder="Type your message here..."
-                      className="text-input"
+                      className="flex-1 bg-gray-800/50 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                       disabled={!isConnected}
                     />
                     <button 
                       type="submit" 
-                      className="send-btn"
+                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 px-6 rounded-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-green-500/25 whitespace-nowrap"
                       disabled={!isConnected || !textInput.trim()}
                     >
                       📤 Send
                     </button>
                   </div>
                 </form>
-                <div className="text-mode-info">
-                  <p>💡 You can use both voice and text simultaneously. Text messages will appear in the conversation history.</p>
+                <div className="bg-gray-800/20 rounded-lg p-3">
+                  <p className="text-gray-400 text-sm">💡 You can use both voice and text simultaneously. Text messages will appear in the conversation history.</p>
                 </div>
               </div>
             )}
 
             {showHistory && conversationHistory.length > 0 && (
-              <div className="conversation-history">
-                <h4>Conversation History:</h4>
-                <div className="history-list">
+              <div className="bg-gray-800/30 border border-gray-700 rounded-lg p-6 mb-6 max-h-80 overflow-y-auto">
+                <h4 className="text-cyan-400 font-semibold mb-4">Conversation History:</h4>
+                <div className="space-y-3">
                   {conversationHistory.map((message, index) => (
-                    <div key={index} className={`message ${message.role}`}>
-                      <strong>{message.role === 'user' ? '👤' : '🤖'}:</strong>
-                      <span>{message.content}</span>
+                    <div key={index} className={`flex gap-3 p-3 rounded-lg ${
+                      message.role === 'user' 
+                        ? 'bg-blue-900/20 border-l-4 border-blue-500' 
+                        : 'bg-green-900/20 border-l-4 border-green-500'
+                    }`}>
+                      <div className="text-lg">{message.role === 'user' ? '👤' : '🤖'}</div>
+                      <div className="text-gray-300 break-words flex-1">{message.content}</div>
                     </div>
                   ))}
                 </div>
@@ -491,31 +440,30 @@ function App() {
             )}
 
             {showGuardrails && (
-              <div className="guardrails-section">
-                <h4>🛡️ Guardrails & Safety</h4>
-                <div className="guardrails-info">
-                  <p>Active guardrails protecting this conversation:</p>
-                  <ul>
-                    <li>✅ Inappropriate Content Filter</li>
-                    <li>✅ Privacy Protection (emails, phone, SSN)</li>
-                    <li>✅ Financial Information Filter</li>
+              <div className="bg-purple-900/10 border border-purple-500/30 rounded-lg p-6 mb-6">
+                <h4 className="text-purple-400 font-semibold mb-4">🛡️ Guardrails & Safety</h4>
+                <div className="mb-4">
+                  <p className="text-gray-300 mb-3">Active guardrails protecting this conversation:</p>
+                  <ul className="space-y-1">
+                    <li className="text-green-400 text-sm">✅ Inappropriate Content Filter</li>
+                    <li className="text-green-400 text-sm">✅ Privacy Protection (emails, phone, SSN)</li>
+                    <li className="text-green-400 text-sm">✅ Financial Information Filter</li>
                   </ul>
                 </div>
                 
                 {guardrailViolations.length > 0 ? (
-                  <div className="violations-list">
-                    <h5>⚠️ Recent Violations:</h5>
+                  <div className="space-y-3">
+                    <h5 className="text-yellow-400 font-medium">⚠️ Recent Violations:</h5>
                     {guardrailViolations.slice(-3).map((violation, index) => (
-                      <div key={index} className="violation">
-                        <div className="violation-header">
-                          <span className="violation-name">{violation.name}</span>
-                          <span className="violation-time">
+                      <div key={index} className="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-red-400 font-medium">{violation.name}</span>
+                          <span className="text-gray-400 text-xs">
                             {violation.timestamp.toLocaleTimeString()}
                           </span>
                         </div>
-                        <div className="violation-details">
+                        <div className="bg-gray-800/40 rounded p-3 font-mono text-sm text-yellow-300">
                           {(() => {
-                            // Convert technical details to user-friendly messages
                             const details = violation.details
                             
                             if (details.containsInappropriate && details.detectedWords?.length > 0) {
@@ -534,7 +482,6 @@ function App() {
                               return `💳 Financial information detected (${details.detectedKeywords.join(', ')}). Response blocked for security.`
                             }
                             
-                            // Fallback for any other violation
                             return `🛡️ Content filtered by safety guardrails. Response was blocked.`
                           })()}
                         </div>
@@ -542,32 +489,40 @@ function App() {
                     ))}
                   </div>
                 ) : (
-                  <div className="no-violations">
-                    <p>✅ No guardrail violations detected</p>
+                  <div className="text-center py-4">
+                    <p className="text-green-400">✅ No guardrail violations detected</p>
                   </div>
                 )}
               </div>
             )}
 
             {toolCalls.length > 0 && (
-              <div className="tool-calls">
-                <h4>🔧 Recent Tool Calls:</h4>
-                {toolCalls.slice(-3).map((call, index) => (
-                  <div key={index} className="tool-call">
-                    <div className="tool-name">🛠️ {call.name}</div>
-                    <div className="tool-args">Args: {JSON.stringify(call.args)}</div>
-                    {call.result && <div className="tool-result">Result: {call.result}</div>}
-                  </div>
-                ))}
+              <div className="bg-orange-900/10 border border-orange-500/30 rounded-lg p-6 mb-6">
+                <h4 className="text-orange-400 font-semibold mb-4">🔧 Recent Tool Calls:</h4>
+                <div className="space-y-3">
+                  {toolCalls.slice(-3).map((call, index) => (
+                    <div key={index} className="bg-gray-800/20 rounded-lg p-4 text-sm">
+                      <div className="text-orange-400 font-medium mb-2">🛠️ {call.name}</div>
+                      <div className="text-gray-400 mb-2">Args: {JSON.stringify(call.args)}</div>
+                      {call.result && <div className="text-green-400 italic">Result: {call.result}</div>}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            <div className="status-info">
-              <p>✅ Microphone active • ✅ Semantic VAD enabled • ✅ Tools ready • ✅ Guardrails active • ✅ Text input ready</p>
+            <div className="bg-green-900/5 rounded-lg p-4">
+              <p className="text-green-400 text-sm">✅ Microphone active • ✅ Semantic VAD enabled • ✅ Tools ready • ✅ Guardrails active • ✅ Text input ready</p>
             </div>
           </div>
         )}
       </main>
+      
+      <TokenRegenerationModal
+        isOpen={showTokenModal}
+        onClose={() => setShowTokenModal(false)}
+        onTokenRegenerated={handleTokenRegenerated}
+      />
     </div>
   )
 }
