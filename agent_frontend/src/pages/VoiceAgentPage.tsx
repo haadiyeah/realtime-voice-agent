@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime'
-import { guardrails } from './guardrails'
-import { getWeather, searchKnowledge, calculateMath } from './tools'
-import { TokenService } from './services/tokenService'
-import { TokenRegenerationModal } from './components/TokenRegenerationModal'
+import { guardrails } from '../guardrails'
+import { getWeather, searchKnowledge, calculateMath } from '../tools'
+import { TokenService } from '../services/tokenService'
+import { TokenRegenerationModal } from '../components/TokenRegenerationModal'
 import './App.css'
 
 export function VoiceAgentPage() {

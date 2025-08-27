@@ -1,6 +1,6 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
-import { VoiceAgentPage } from './VoiceAgentPage'
+import { VoiceAgentPage } from './pages/VoiceAgentPage'
 import { RealtimeConversationDemo } from './pages/RealtimeConversationDemo'
 import './App.css'
 
